@@ -13,6 +13,11 @@ namespace RigidPlacement
         private Rect mainPanelRect;
         private Rect maxIterationsLabelRect;
         private Rect maxIterationsFieldRect;
+        private Rect forceLabelRect;
+        private Rect forceFieldRect;
+        private Rect randomizeAngleRect;
+        private Rect angleLabelRect;
+        private Rect angleFieldRect;
         private Rect includeNonRigidbodyRect;
         private Rect buttonGroupLabelRect;
         private Rect buttonGroupRect;
@@ -24,6 +29,9 @@ namespace RigidPlacement
 
         // Strings
         private readonly string maxIterationsText = "Max Iterations:";
+        private readonly string forceText = "Min|Max Force:";
+        private readonly string randomAngleText = "Randomize Angle";
+        private readonly string angleText = "Force Angle (Degrees):";
         private readonly string simulateText = "Simulate";
         private readonly string resetText = "Reset Bodies";
         private readonly string statusText = "Status:";
@@ -37,6 +45,10 @@ namespace RigidPlacement
         private readonly List<GameObject> nonRigidbodies = new();
         private readonly List<SimulatedBody> tempBodies = new();
         private string maxIterationsString;
+        private string forceMinString;
+        private string forceMaxString;
+        private string angleString;
+        private bool randomizeAngle = false;
         private bool includeNonRigidbodies = false;
         private bool isAddPressed = false;
         private bool isRemovedPressed = false;
@@ -83,6 +95,9 @@ namespace RigidPlacement
         public RigidPlacementWindow()
         {
             maxIterationsString = "1000";
+            forceMinString = "0";
+            forceMaxString = "0";
+            angleString = "0";
             statusString = ". . .";
         }
 
@@ -93,6 +108,8 @@ namespace RigidPlacement
             mainPanelRect = new(new Vector2(0f, 0f), new Vector2(position.size.x, position.size.y));
 
             HandleMaxIterationsField();
+            HandleMinMaxForce();
+            HandleForceAngle();
             HandleIncludeNonRigidbodyField();
             HandleButtons();
             HandleStatusText();
@@ -154,11 +171,11 @@ namespace RigidPlacement
                 new Vector2((characterWidth * 0.5f) + mainPanelRect.xMin, mainPanelRect.yMin + 4f),
                 new Vector2(maxIterationsText.Length * characterWidth, textFieldHeight));
             maxIterationsFieldRect = new(
-                new Vector2(maxIterationsLabelRect.xMax, maxIterationsLabelRect.yMin),
+                new Vector2(maxIterationsLabelRect.xMax - 12f, maxIterationsLabelRect.yMin),
                 new Vector2(mainPanelRect.xMax - (maxIterationsLabelRect.width + characterWidth), textFieldHeight));
 
             GUI.Label(maxIterationsLabelRect, maxIterationsText, EditorStyles.boldLabel);
-            string current = GUI.TextField(maxIterationsFieldRect, maxIterationsString, EditorStyles.numberField);
+            string current = GUI.TextField(maxIterationsFieldRect, maxIterationsString);
             maxIterationsString = string.Empty;
             StringBuilder sb = new();
             for (int i = 0; i < current.Length; i++)
@@ -168,13 +185,82 @@ namespace RigidPlacement
             maxIterationsString = sb.ToString();
         }
 
+        private void HandleMinMaxForce()
+        {
+            float horizontalOffset = characterWidth * 0.5f;
+            float verticalOffset = textFieldHeight * 0.5f;
+
+            forceLabelRect = new(
+                new Vector2(horizontalOffset + mainPanelRect.xMin, maxIterationsLabelRect.yMax + verticalOffset),
+                new Vector2(mainPanelRect.xMax - horizontalOffset, textFieldHeight));
+
+            forceFieldRect = new(
+                new Vector2(forceText.Length * characterWidth, forceLabelRect.yMin),
+                new Vector2(forceText.Length * characterWidth, textFieldHeight + 8));
+
+            GUI.Label(forceLabelRect, forceText, EditorStyles.boldLabel);
+            GUILayout.BeginArea(forceFieldRect);
+            GUILayout.BeginHorizontal();
+            string tempForceMinString = GUILayout.TextField(forceMinString);
+            string tempForceMaxString = GUILayout.TextField(forceMaxString);
+            GUILayout.EndHorizontal();
+            GUILayout.EndArea();
+            StringBuilder sb = new();
+            for (int i = 0; tempForceMinString.Length > i; i++)
+            {
+                if (char.IsNumber(tempForceMinString[i])) sb.Append(tempForceMinString[i]);
+            }
+            forceMinString = sb.ToString();
+            sb.Clear();
+            for (int i = 0; tempForceMaxString.Length > i; i++)
+            {
+                if (char.IsNumber(tempForceMaxString[i])) sb.Append(tempForceMaxString[i]);
+            }
+            forceMaxString = sb.ToString();
+        }
+
+        private void HandleForceAngle()
+        {
+            float horizontalOffset = characterWidth * 0.5f;
+            float verticalOffset = textFieldHeight * 0.5f;
+
+            randomizeAngleRect = new(
+                new Vector2(horizontalOffset + mainPanelRect.xMin, forceLabelRect.yMax + verticalOffset),
+                new Vector2(randomAngleText.Length * characterWidth, textFieldHeight));
+
+            angleLabelRect = new(
+                new Vector2(horizontalOffset + mainPanelRect.xMin, randomizeAngleRect.yMax + verticalOffset),
+                new Vector2(mainPanelRect.xMax - angleLabelRect.width, textFieldHeight));
+
+            angleFieldRect = new(
+                new Vector2(angleLabelRect.xMax - (horizontalOffset * 6), angleLabelRect.yMin),
+                new Vector2(mainPanelRect.xMax - angleLabelRect.width, textFieldHeight));
+
+            randomizeAngle = GUI.Toggle(randomizeAngleRect, randomizeAngle, randomAngleText, EditorStyles.toggle);
+            GUI.Label(angleLabelRect, angleText, EditorStyles.boldLabel);
+            if (randomizeAngle)
+            {
+                GUI.Label(angleFieldRect, "Randomized", EditorStyles.label);
+            }
+            else
+            {
+                string temp = GUI.TextField(angleFieldRect, angleString);
+                StringBuilder sb = new();
+                for (int i = 0; temp.Length > i; i++)
+                {
+                    if (char.IsNumber(temp[i])) sb.Append(temp[i]);
+                }
+                angleString = sb.ToString();
+            }
+        }
+
         private void HandleIncludeNonRigidbodyField()
         {
             float horizontalOffset = characterWidth * 0.5f;
             float verticalOffset = textFieldHeight * 0.5f;
 
             includeNonRigidbodyRect = new(
-                new Vector2(horizontalOffset + mainPanelRect.xMin, maxIterationsLabelRect.yMax + verticalOffset),
+                new Vector2(horizontalOffset + mainPanelRect.xMin, angleLabelRect.yMax + verticalOffset),
                 new Vector2(mainPanelRect.xMax - horizontalOffset, textFieldHeight));
 
             bool tempState = GUI.Toggle(includeNonRigidbodyRect, includeNonRigidbodies, "Include Non-Rigidbodies", EditorStyles.toggle);
