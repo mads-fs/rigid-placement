@@ -29,3 +29,7 @@ The worflow is kept simple:
     * Overview: The list of objects you currently will affect when you press "Simulate".
 
 Stay tuned for possibly more features and tweaks!
+
+# Demonstration
+https://github.com/mads-fs/rigid-placement/assets/146040109/d0a25596-88d6-4118-a0b0-da2f7fc50549
+
