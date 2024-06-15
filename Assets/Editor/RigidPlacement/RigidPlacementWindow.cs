@@ -9,6 +9,43 @@ namespace RigidPlacement
 {
     public class RigidPlacementWindow : EditorWindow
     {
+        // Rects
+        private Rect mainPanelRect;
+        private Rect maxIterationsLabelRect;
+        private Rect maxIterationsFieldRect;
+        private Rect includeNonRigidbodyRect;
+        private Rect buttonGroupLabelRect;
+        private Rect buttonGroupRect;
+        private Rect simulateButtonRect;
+        private Rect resetButtonRect;
+        private Rect statusLabelRect;
+        private Rect statusLabelFieldRect;
+        private Rect scrollViewRect;
+
+        // Strings
+        private readonly string maxIterationsText = "Max Iterations:";
+        private readonly string simulateText = "Simulate";
+        private readonly string resetText = "Reset Bodies";
+        private readonly string statusText = "Status:";
+
+        // Editor Settings
+        private readonly float characterWidth = 8f;
+        private readonly float textFieldHeight = 16f;
+
+        // State
+        private readonly List<SimulatedBody> bodies = new();
+        private readonly List<GameObject> nonRigidbodies = new();
+        private readonly List<SimulatedBody> tempBodies = new();
+        private string maxIterationsString;
+        private bool includeNonRigidbodies = false;
+        private bool isAddPressed = false;
+        private bool isRemovedPressed = false;
+        private bool isClearPressed = false;
+        private bool isSimulatedPressed = false;
+        private bool isResetPressed = false;
+        private string statusString;
+        private Vector2 overviewScrollPosition;
+
         private readonly struct SimulatedBody
         {
             public readonly Rigidbody Rigidbody;
@@ -37,45 +74,6 @@ namespace RigidPlacement
             }
         }
 
-        private readonly List<SimulatedBody> bodies = new();
-
-        private readonly List<GameObject> nonRigidbodies = new();
-        private readonly List<SimulatedBody> tempBodies = new();
-
-        // Rects
-        private Rect mainPanelRect;
-        private Rect maxIterationsLabelRect;
-        private Rect maxIterationsFieldRect;
-        private Rect includeNonRigidbodyRect;
-        private Rect buttonGroupLabelRect;
-        private Rect buttonGroupRect;
-        private Rect simulateButtonRect;
-        private Rect resetButtonRect;
-        private Rect statusLabelRect;
-        private Rect statusLabelFieldRect;
-        private Rect scrollViewRect;
-
-        // Strings
-        private readonly string maxIterationsText = "Max Iterations:";
-        private readonly string simulateText = "Simulate";
-        private readonly string resetText = "Reset Bodies";
-        private readonly string statusText = "Status:";
-
-        // Editor Settings
-        private readonly float characterWidth = 8f;
-        private readonly float textFieldHeight = 16f;
-
-        // State
-        private string maxIterationsString;
-        private bool includeNonRigidbodies = false;
-        private bool isAddPressed = false;
-        private bool isRemovedPressed = false;
-        private bool isClearPressed = false;
-        private bool isSimulatedPressed = false;
-        private bool isResetPressed = false;
-        private string statusString;
-        private Vector2 overviewScrollPosition;
-
         [MenuItem("Window/Rigid Placement")]
         public static void ShowWindow()
         {
@@ -88,14 +86,7 @@ namespace RigidPlacement
             statusString = ". . .";
         }
 
-        private void OnEnable() => EditorApplication.contextualPropertyMenu += OnPropertyContextMenu;
-        private void OnDisable() => EditorApplication.contextualPropertyMenu -= OnPropertyContextMenu;
         private void OnHierarchyChange() => ValidateBodies();
-
-        private void OnPropertyContextMenu(GenericMenu menu, SerializedProperty property)
-        {
-            Debug.Log("");
-        }
 
         private void OnGUI()
         {
