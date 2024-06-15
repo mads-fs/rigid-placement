@@ -43,7 +43,7 @@ namespace RigidPlacement
         // State
         private readonly List<SimulatedBody> bodies = new();
         private readonly List<GameObject> nonRigidbodies = new();
-        private readonly List<SimulatedBody> tempBodies = new();
+        private readonly List<VirtualSimulatedBody> virtualBodies = new();
         private string maxIterationsString;
         private string forceMinString;
         private string forceMaxString;
@@ -83,6 +83,28 @@ namespace RigidPlacement
                     Rigidbody.gameObject.transform.position = OriginalPosition;
                     Rigidbody.gameObject.transform.rotation = OriginalRotation;
                 }
+            }
+        }
+
+        private readonly struct VirtualSimulatedBody
+        {
+            public readonly GameObject Parent;
+            public readonly Vector3 OriginalPosition;
+            public readonly Quaternion OriginalRotation;
+            public readonly int Hash;
+
+            public VirtualSimulatedBody(GameObject parent, Vector3 pos, Quaternion rot)
+            {
+                this.Parent = parent;
+                this.OriginalPosition = pos;
+                this.OriginalRotation = rot;
+                this.Hash = HashCode.Combine(Parent, OriginalPosition, OriginalRotation);
+            }
+
+            public readonly void Reset()
+            {
+                Parent.transform.position = OriginalPosition;
+                Parent.transform.rotation = OriginalRotation;
             }
         }
 
@@ -149,20 +171,7 @@ namespace RigidPlacement
                 }
             }
 
-            if (!includeNonRigidbodies)
-            {
-                if (tempBodies.Count > 0)
-                {
-                    for (int i = tempBodies.Count - 1; i > -1; i--)
-                    {
-                        if (tempBodies[i].Rigidbody == null) continue;
-                        DestroyImmediate(tempBodies[i].Rigidbody.gameObject.GetComponent<MeshCollider>());
-                        DestroyImmediate(tempBodies[i].Rigidbody.gameObject.GetComponent<Rigidbody>());
-                    }
-                    tempBodies.Clear();
-                }
-                nonRigidbodies.Clear();
-            }
+            if (!includeNonRigidbodies) nonRigidbodies.Clear();
         }
 
         private void HandleMaxIterationsField()
@@ -320,9 +329,10 @@ namespace RigidPlacement
         {
             float aggregatedItemHeight = ((bodies.Count + nonRigidbodies.Count) - 2) * textFieldHeight;
             float probe = mainPanelRect.height - statusLabelFieldRect.yMax;
-            float adjustableHeight =
-                aggregatedItemHeight < probe ? probe - (textFieldHeight * 0.75f) :
-                (probe - aggregatedItemHeight) + aggregatedItemHeight - (textFieldHeight * 0.75f);
+            float padding = textFieldHeight * 0.75f;
+            float adjustableHeight = aggregatedItemHeight < probe ?
+                probe - padding :
+                (probe - aggregatedItemHeight) + aggregatedItemHeight - padding;
 
             scrollViewRect = new(
                 new Vector2(statusLabelRect.xMin, statusLabelFieldRect.yMax + (textFieldHeight * 0.5f)),
@@ -359,7 +369,7 @@ namespace RigidPlacement
                 }
                 else if (includeNonRigidbodies) addedBodies++;
             }
-            statusString = $"Added {addedBodies} new bodies ({bodies.Count} total)";
+            statusString = $"Added {addedBodies} new bodies ({bodies.Count + nonRigidbodies.Count} total)";
         }
 
         private void HandleRemove()
@@ -390,20 +400,12 @@ namespace RigidPlacement
                         {
                             if (list.Contains(nonRigidbodies[i]))
                             {
-                                GameObject go = nonRigidbodies[i];
-                                if (go.TryGetComponent(out Rigidbody body))
-                                {
-                                    SimulatedBody sb = tempBodies.First(x => x.Rigidbody == body);
-                                    DestroyImmediate(sb.Rigidbody.gameObject.GetComponent<MeshCollider>());
-                                    DestroyImmediate(sb.Rigidbody.gameObject.GetComponent<Rigidbody>());
-                                    tempBodies.RemoveAll(x => sb.Hash == x.Hash);
-                                }
-                                nonRigidbodies.RemoveAll(x => x == go);
+                                virtualBodies.RemoveAll(x => x.Parent == nonRigidbodies[i]);
+                                nonRigidbodies.RemoveAt(i);
                                 removedBodies++;
                             }
                         }
                     }
-                    if (nonRigidbodies.Count == 0) tempBodies.Clear();
                 }
                 statusString = $"Removed {removedBodies} bodies ({bodies.Count + nonRigidbodies.Count} total)";
             }
@@ -412,19 +414,8 @@ namespace RigidPlacement
         private void HandleClear()
         {
             bodies.Clear();
-            if (includeNonRigidbodies)
-            {
-                if (tempBodies.Count > 0)
-                {
-                    for (int i = tempBodies.Count - 1; i > -1; i--)
-                    {
-                        DestroyImmediate(tempBodies[i].Rigidbody.gameObject.GetComponent<MeshCollider>());
-                        DestroyImmediate(tempBodies[i].Rigidbody.gameObject.GetComponent<Rigidbody>());
-                    }
-                }
-                tempBodies.Clear();
-                nonRigidbodies.Clear();
-            }
+            virtualBodies.Clear();
+            nonRigidbodies.Clear();
             statusString = "Cleared out all bodies.";
         }
 
@@ -440,6 +431,7 @@ namespace RigidPlacement
             }
             else if (int.TryParse(maxIterationsString, out int iterations))
             {
+                List<Rigidbody> simulatedBodies = new();
                 if (bodies.Count > 0)
                 {
                     // Update position and rotation to make sure that the new
@@ -450,6 +442,7 @@ namespace RigidPlacement
                         if (bodies[i].Rigidbody != null)
                         {
                             bodies[i] = new(bodies[i].Rigidbody, bodies[i].Rigidbody.position, bodies[i].Rigidbody.rotation);
+                            simulatedBodies.Add(bodies[i].Rigidbody);
                         }
                         else
                         {
@@ -458,14 +451,30 @@ namespace RigidPlacement
                     }
                 }
 
-                if (bodies.Count > 0 || (includeNonRigidbodies && nonRigidbodies.Count > 0))
+                List<Rigidbody> virtualBodies = new();
+                if (nonRigidbodies.Count > 0)
+                {
+                    // Update position and rotation to make sure that the new
+                    // simulation starts where the bodies are now compare to
+                    // where they were when they were first recorded
+                    for (int i = nonRigidbodies.Count - 1; i > -1; i--)
+                    {
+                        MeshCollider collider = nonRigidbodies[i].AddComponent<MeshCollider>();
+                        collider.convex = true;
+                        Rigidbody rb = nonRigidbodies[i].AddComponent<Rigidbody>();
+
+                        virtualBodies.Add(rb);
+                        this.virtualBodies.Add(new(nonRigidbodies[i], nonRigidbodies[i].transform.position, nonRigidbodies[i].transform.rotation));
+                    }
+                }
+
+                if (simulatedBodies.Count > 0 || virtualBodies.Count > 0)
                 {
                     // Find all bodies not to be simulated and note their position and rotation
                     // so they can be reset after the simulation is done.
                     List<SimulatedBody> unaffectedBodies = new();
                     GameObject[] allObjects = FindObjectsOfType<GameObject>();
-                    List<Rigidbody> simulatedBodies = bodies.Select(x => x.Rigidbody).ToList();
-                    simulatedBodies.AddRange(tempBodies.Select(x => x.Rigidbody));
+                    simulatedBodies.AddRange(virtualBodies);
                     foreach (GameObject go in allObjects)
                     {
                         if (go.TryGetComponent(out Rigidbody body))
@@ -473,24 +482,6 @@ namespace RigidPlacement
                             if (!simulatedBodies.Contains(body))
                             {
                                 unaffectedBodies.Add(new(body, body.position, body.rotation));
-                            }
-                        }
-                    }
-
-                    if (includeNonRigidbodies)
-                    {
-                        allObjects = allObjects.Except(unaffectedBodies.Select(x => x.Rigidbody.gameObject).ToArray()).ToArray();
-                        foreach (GameObject go in allObjects)
-                        {
-                            if (nonRigidbodies.Contains(go))
-                            {
-                                if (go.GetComponent<Rigidbody>() == null)
-                                {
-                                    Rigidbody body = go.AddComponent<Rigidbody>();
-                                    MeshCollider collider = go.AddComponent<MeshCollider>();
-                                    collider.convex = true;
-                                    tempBodies.Add(new(body, body.position, body.rotation));
-                                }
                             }
                         }
                     }
@@ -504,7 +495,7 @@ namespace RigidPlacement
                     {
                         Physics.Simulate(Time.fixedDeltaTime);
                         ResetAllBodies(unaffectedBodies);
-                        if (bodies.All(rb => rb.Rigidbody.IsSleeping()) && tempBodies.All(rb => rb.Rigidbody.IsSleeping()))
+                        if (simulatedBodies.All(rb => rb.IsSleeping()))
                         {
                             statusString = $"Done simulating in {i} iterations.";
                             break;
@@ -513,6 +504,14 @@ namespace RigidPlacement
                     Physics.autoSyncTransforms = true;
                     Physics.simulationMode = simMode;
                     ResetAllBodies(unaffectedBodies);
+
+                    simulatedBodies.Clear();
+
+                    for (int i = 0; i < nonRigidbodies.Count; i++)
+                    {
+                        DestroyImmediate(nonRigidbodies[i].GetComponent<MeshCollider>());
+                        DestroyImmediate(nonRigidbodies[i].GetComponent<Rigidbody>());
+                    }
                 }
                 else
                 {
@@ -550,13 +549,20 @@ namespace RigidPlacement
         private void HandleReset()
         {
             ResetAllBodies(bodies);
-            ResetAllBodies(tempBodies);
+            ResetAllBodies(virtualBodies);
+            virtualBodies.Clear();
         }
 
         // Reset the position and rotation of all passed bodies
         private void ResetAllBodies(List<SimulatedBody> list)
         {
             foreach (SimulatedBody body in list) body.Reset();
+        }
+
+        // Reset the position and rotation of all passed bodies
+        private void ResetAllBodies(List<VirtualSimulatedBody> list)
+        {
+            foreach (VirtualSimulatedBody body in list) body.Reset();
         }
     }
 }
