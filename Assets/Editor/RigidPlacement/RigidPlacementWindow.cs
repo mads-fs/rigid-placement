@@ -164,6 +164,7 @@ namespace RigidPlacement
             }
         }
 
+        /// <summary>Validates all currently tracked bodies and removes invalid ones.</summary>
         private void ValidateBodies()
         {
             int difference = 0;
@@ -219,13 +220,7 @@ namespace RigidPlacement
 
             GUI.Label(maxIterationsLabelRect, maxIterationsText, EditorStyles.boldLabel);
             string current = GUI.TextField(maxIterationsFieldRect, maxIterationsString);
-            maxIterationsString = string.Empty;
-            StringBuilder sb = new();
-            for (int i = 0; i < current.Length; i++)
-            {
-                if (char.IsNumber(current[i])) sb.Append(current[i]);
-            }
-            maxIterationsString = sb.ToString();
+            maxIterationsString = ValidateNumberField(current);
         }
 
         private void HandleMinMaxForce()
@@ -248,18 +243,8 @@ namespace RigidPlacement
             string tempForceMaxString = GUILayout.TextField(forceMaxString);
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
-            StringBuilder sb = new();
-            for (int i = 0; tempForceMinString.Length > i; i++)
-            {
-                if (char.IsNumber(tempForceMinString[i])) sb.Append(tempForceMinString[i]);
-            }
-            forceMinString = sb.ToString();
-            sb.Clear();
-            for (int i = 0; tempForceMaxString.Length > i; i++)
-            {
-                if (char.IsNumber(tempForceMaxString[i])) sb.Append(tempForceMaxString[i]);
-            }
-            forceMaxString = sb.ToString();
+            forceMinString = ValidateNumberField(tempForceMinString);
+            forceMaxString = ValidateNumberField(tempForceMaxString);
         }
 
         private void HandleForceAngle()
@@ -288,12 +273,7 @@ namespace RigidPlacement
             else
             {
                 string temp = GUI.TextField(angleFieldRect, angleString);
-                StringBuilder sb = new();
-                for (int i = 0; temp.Length > i; i++)
-                {
-                    if (char.IsNumber(temp[i])) sb.Append(temp[i]);
-                }
-                angleString = sb.ToString();
+                angleString = ValidateNumberField(temp);
             }
         }
 
@@ -587,6 +567,16 @@ namespace RigidPlacement
             ResetAllBodies(bodies);
             ResetAllBodies(virtualBodies);
             virtualBodies.Clear();
+        }
+
+        private string ValidateNumberField(string text)
+        {
+            StringBuilder sb = new(string.Empty);
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (char.IsNumber(text[i])) sb.Append(text[i]);
+            }
+            return sb.ToString();
         }
 
         // Reset the position and rotation of all passed bodies
