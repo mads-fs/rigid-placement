@@ -318,11 +318,17 @@ namespace RigidPlacement
 
         private void HandleOverview()
         {
+            float aggregatedItemHeight = ((bodies.Count + nonRigidbodies.Count) - 2) * textFieldHeight;
+            float probe = mainPanelRect.height - statusLabelFieldRect.yMax;
+            float adjustableHeight =
+                aggregatedItemHeight < probe ? probe - (textFieldHeight * 0.75f) :
+                (probe - aggregatedItemHeight) + aggregatedItemHeight - (textFieldHeight * 0.75f);
+
             scrollViewRect = new(
                 new Vector2(statusLabelRect.xMin, statusLabelFieldRect.yMax + (textFieldHeight * 0.5f)),
-                new Vector2(mainPanelRect.width - characterWidth, mainPanelRect.height - (textFieldHeight)));
+                new Vector2(mainPanelRect.width - characterWidth, adjustableHeight));
             GUILayout.BeginArea(scrollViewRect);
-            overviewScrollPosition = GUILayout.BeginScrollView(overviewScrollPosition, GUILayout.Width(scrollViewRect.width), GUILayout.Height(mainPanelRect.height));
+            overviewScrollPosition = GUILayout.BeginScrollView(overviewScrollPosition, GUILayout.Width(scrollViewRect.width));
             foreach (SimulatedBody body in bodies)
             {
                 EditorGUILayout.ObjectField(obj: body.Rigidbody.gameObject, objType: typeof(GameObject), allowSceneObjects: true);
