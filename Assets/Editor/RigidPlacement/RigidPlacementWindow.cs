@@ -42,7 +42,7 @@ namespace RigidPlacement
 
         // State
         private readonly List<SimulatedBody> bodies = new();
-        private readonly List<GameObject> nonRigidbodies = new();
+        private readonly List<VirtualParent> nonRigidbodies = new();
         private readonly List<VirtualSimulatedBody> virtualBodies = new();
         private string maxIterationsString;
         private string forceMinString;
@@ -91,20 +91,34 @@ namespace RigidPlacement
             public readonly GameObject Parent;
             public readonly Vector3 OriginalPosition;
             public readonly Quaternion OriginalRotation;
+            public readonly int ParentHash;
             public readonly int Hash;
 
-            public VirtualSimulatedBody(GameObject parent, Vector3 pos, Quaternion rot)
+            public VirtualSimulatedBody(GameObject parent, Vector3 pos, Quaternion rot, int parentHash)
             {
                 this.Parent = parent;
                 this.OriginalPosition = pos;
                 this.OriginalRotation = rot;
-                this.Hash = HashCode.Combine(Parent, OriginalPosition, OriginalRotation);
+                this.ParentHash = parentHash;
+                this.Hash = HashCode.Combine(Parent, OriginalPosition, OriginalRotation, ParentHash);
             }
 
             public readonly void Reset()
             {
                 Parent.transform.position = OriginalPosition;
                 Parent.transform.rotation = OriginalRotation;
+            }
+        }
+
+        private readonly struct VirtualParent
+        {
+            public readonly GameObject Target;
+            public readonly int Hash;
+
+            public VirtualParent(GameObject parent)
+            {
+                this.Target = parent;
+                this.Hash = HashCode.Combine(parent, parent.GetInstanceID());
             }
         }
 
@@ -116,6 +130,8 @@ namespace RigidPlacement
 
         public RigidPlacementWindow()
         {
+            // setting up strings
+            // the editor breaks if any used string starts out as null
             maxIterationsString = "1000";
             forceMinString = "0";
             forceMaxString = "0";
@@ -171,7 +187,25 @@ namespace RigidPlacement
                 }
             }
 
-            if (!includeNonRigidbodies) nonRigidbodies.Clear();
+            if (!includeNonRigidbodies)
+            {
+                nonRigidbodies.Clear();
+                virtualBodies.Clear();
+            }
+            else
+            {
+                if (nonRigidbodies.Count > 0)
+                {
+                    for (int i = nonRigidbodies.Count - 1; i > -1; i--)
+                    {
+                        if (nonRigidbodies[i].Target == null)
+                        {
+                            virtualBodies.RemoveAll(x => x.ParentHash == nonRigidbodies[i].Hash);
+                            nonRigidbodies.RemoveAt(i);
+                        }
+                    }
+                }
+            }
         }
 
         private void HandleMaxIterationsField()
@@ -345,7 +379,7 @@ namespace RigidPlacement
             }
             if (includeNonRigidbodies)
             {
-                foreach (GameObject go in nonRigidbodies)
+                foreach (GameObject go in nonRigidbodies.Select(x => x.Target))
                 {
                     EditorGUILayout.ObjectField(obj: go, objType: typeof(GameObject), allowSceneObjects: true);
                 }
@@ -398,9 +432,9 @@ namespace RigidPlacement
                     {
                         for (int i = nonRigidbodies.Count - 1; i > -1; i--)
                         {
-                            if (list.Contains(nonRigidbodies[i]))
+                            if (list.Contains(nonRigidbodies[i].Target))
                             {
-                                virtualBodies.RemoveAll(x => x.Parent == nonRigidbodies[i]);
+                                virtualBodies.RemoveAll(x => x.Parent == nonRigidbodies[i].Target);
                                 nonRigidbodies.RemoveAt(i);
                                 removedBodies++;
                             }
@@ -459,12 +493,13 @@ namespace RigidPlacement
                     // where they were when they were first recorded
                     for (int i = nonRigidbodies.Count - 1; i > -1; i--)
                     {
-                        MeshCollider collider = nonRigidbodies[i].AddComponent<MeshCollider>();
+                        MeshCollider collider = nonRigidbodies[i].Target.AddComponent<MeshCollider>();
                         collider.convex = true;
-                        Rigidbody rb = nonRigidbodies[i].AddComponent<Rigidbody>();
+                        Rigidbody rb = nonRigidbodies[i].Target.AddComponent<Rigidbody>();
 
                         virtualBodies.Add(rb);
-                        this.virtualBodies.Add(new(nonRigidbodies[i], nonRigidbodies[i].transform.position, nonRigidbodies[i].transform.rotation));
+                        GameObject parent = nonRigidbodies[i].Target;
+                        this.virtualBodies.Add(new(parent, parent.transform.position, parent.transform.rotation, nonRigidbodies[i].Hash));
                     }
                 }
 
@@ -509,8 +544,8 @@ namespace RigidPlacement
 
                     for (int i = 0; i < nonRigidbodies.Count; i++)
                     {
-                        DestroyImmediate(nonRigidbodies[i].GetComponent<MeshCollider>());
-                        DestroyImmediate(nonRigidbodies[i].GetComponent<Rigidbody>());
+                        DestroyImmediate(nonRigidbodies[i].Target.GetComponent<MeshCollider>());
+                        DestroyImmediate(nonRigidbodies[i].Target.GetComponent<Rigidbody>());
                     }
                 }
                 else
@@ -528,6 +563,7 @@ namespace RigidPlacement
         {
             GameObject[] selections = Selection.gameObjects;
             List<GameObject> result = new();
+            IEnumerable<GameObject> targets = nonRigidbodies.Select(x => x.Target);
             foreach (GameObject selection in selections)
             {
                 if (selection.TryGetComponent(out Rigidbody _))
@@ -537,9 +573,9 @@ namespace RigidPlacement
                 else if (includeNonRigidbodies)
                 {
                     result.Add(selection);
-                    if (!nonRigidbodies.Contains(selection))
+                    if (!targets.Contains(selection))
                     {
-                        nonRigidbodies.Add(selection);
+                        nonRigidbodies.Add(new(selection));
                     }
                 }
             }
