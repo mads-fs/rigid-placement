@@ -105,8 +105,11 @@ namespace RigidPlacement
 
             public readonly void Reset()
             {
-                Parent.transform.position = OriginalPosition;
-                Parent.transform.rotation = OriginalRotation;
+                if (Parent != null)
+                {
+                    Parent.transform.position = OriginalPosition;
+                    Parent.transform.rotation = OriginalRotation;
+                }
             }
         }
 
@@ -499,6 +502,27 @@ namespace RigidPlacement
                                 unaffectedBodies.Add(new(body, body.position, body.rotation));
                             }
                         }
+                    }
+
+                    // Randomly Generate Forces
+                    float minForce = string.IsNullOrEmpty(forceMinString) ? 0f : float.Parse(forceMinString);
+                    float maxForce = string.IsNullOrEmpty(forceMaxString) ? 0f : float.Parse(forceMaxString);
+                    float forceRad;
+                    if (randomizeAngle)
+                    {
+                        forceRad = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+                    }
+                    else
+                    {
+                        forceRad = string.IsNullOrEmpty(angleString) ? 0f : Mathf.Clamp(float.Parse(angleString), 0f, 360f) * Mathf.Deg2Rad;
+                    }
+
+                    // Apply forces
+                    foreach (Rigidbody body in simulatedBodies)
+                    {
+                        float randomForce = UnityEngine.Random.Range(minForce, maxForce);
+                        Vector3 forceDir = new(Mathf.Sin(forceRad), 0, Mathf.Cos(forceRad));
+                        body.AddForce(forceDir * randomForce, ForceMode.Impulse);
                     }
 
                     // Store previous mode to reset it after simulation
