@@ -230,11 +230,11 @@ namespace RigidPlacement
 
             angleLabelRect = new(
                 new Vector2(horizontalOffset + mainPanelRect.xMin, randomizeAngleRect.yMax + verticalOffset),
-                new Vector2(mainPanelRect.xMax - angleLabelRect.width, textFieldHeight));
+                new Vector2(angleText.Length * characterWidth, textFieldHeight));
 
             angleFieldRect = new(
-                new Vector2(angleLabelRect.xMax - (horizontalOffset * 6), angleLabelRect.yMin),
-                new Vector2(mainPanelRect.xMax - angleLabelRect.width, textFieldHeight));
+                new Vector2(angleLabelRect.xMax, angleLabelRect.yMin),
+                new Vector2(characterWidth * 6, textFieldHeight));
 
             randomizeAngle = GUI.Toggle(randomizeAngleRect, randomizeAngle, randomAngleText, EditorStyles.toggle);
             GUI.Label(angleLabelRect, angleText, EditorStyles.boldLabel);
