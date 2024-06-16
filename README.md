@@ -10,6 +10,7 @@ I might look into testing this on as old a version of Unity as I can so that I m
 
 # Workflow
 <img align="right" width="343" height="433" src="https://github.com/mads-fs/rigid-placement/assets/146040109/831125db-0a51-4fd1-893b-4e38120d8240">
+
 The project consists of a single Editor script that places a new "Rigid Placement" menu item under "Window" and that's all you need for it to work.
 The worflow is kept simple:
 1. Choose Window->Rigid Placement
