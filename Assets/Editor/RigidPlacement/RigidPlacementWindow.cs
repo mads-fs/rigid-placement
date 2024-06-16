@@ -532,7 +532,7 @@ namespace RigidPlacement
             statusString = "Simulating...";
             unaffectedBodies.Clear();
             GameObject[] allObjects = FindObjectsOfType<GameObject>();
-            simulatedBodies.AddRange(virtualBodies);
+            simulatedBodies.AddRange(virtualBodies.Select(x => x.Parent.GetComponent<Rigidbody>()));
             foreach (GameObject go in allObjects)
             {
                 if (go.TryGetComponent(out Rigidbody body))
