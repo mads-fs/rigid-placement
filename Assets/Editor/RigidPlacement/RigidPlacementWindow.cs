@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Unity.VisualScripting;
 using UnityEditor;
 using UnityEngine;
 
@@ -21,6 +22,7 @@ namespace RigidPlacement
         private Rect includeNonRigidbodyRect;
         private Rect buttonGroupLabelRect;
         private Rect buttonGroupRect;
+        private Rect showSimulationRect;
         private Rect simulateButtonRect;
         private Rect resetButtonRect;
         private Rect statusLabelRect;
@@ -32,6 +34,7 @@ namespace RigidPlacement
         private readonly string forceText = "Min|Max Force:";
         private readonly string randomAngleText = "Randomize Angle";
         private readonly string angleText = "Force Angle (Degrees):";
+        private readonly string showSimText = "Show Simulation";
         private readonly string simulateText = "Simulate";
         private readonly string resetText = "Reset Bodies";
         private readonly string statusText = "Status:";
@@ -45,6 +48,7 @@ namespace RigidPlacement
         private readonly List<VirtualParent> nonRigidbodies = new();
         private readonly List<VirtualSimulatedBody> virtualBodies = new();
         private string maxIterationsString;
+        private int maxIterations;
         private string forceMinString;
         private string forceMaxString;
         private string angleString;
@@ -53,10 +57,16 @@ namespace RigidPlacement
         private bool isAddPressed = false;
         private bool isRemovedPressed = false;
         private bool isClearPressed = false;
+        private bool isShowSimulationChecked = false;
         private bool isSimulatedPressed = false;
         private bool isResetPressed = false;
         private string statusString;
         private Vector2 overviewScrollPosition;
+        private readonly List<Rigidbody> simulatedBodies = new();
+        private readonly List<SimulatedBody> unaffectedBodies = new();
+        private SimulationMode simMode = SimulationMode.FixedUpdate;
+        private bool simulate = false;
+        private int simStep = 0;
 
         private readonly struct SimulatedBody
         {
@@ -310,6 +320,8 @@ namespace RigidPlacement
             buttonGroupRect = new(
                 new Vector2(horizontalOffset + mainPanelRect.xMin, buttonGroupLabelRect.yMax + verticalOffset),
                 new Vector2(mainPanelRect.xMax - characterWidth, textFieldHeight));
+
+            GUI.enabled = !simulate;
             GUILayout.BeginArea(buttonGroupRect);
             GUILayout.BeginHorizontal();
             isAddPressed = GUILayout.Button("Add");
@@ -317,16 +329,23 @@ namespace RigidPlacement
             isClearPressed = GUILayout.Button("Clear");
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
+            GUI.enabled = simulate;
 
-            simulateButtonRect = new(
+            showSimulationRect = new(
                 new Vector2(buttonGroupRect.xMin, buttonGroupRect.yMax + verticalOffset),
-                new Vector2(mainPanelRect.size.x - characterWidth, textFieldHeight));
+                new Vector2(showSimText.Length * characterWidth, textFieldHeight));
+            simulateButtonRect = new(
+                new Vector2(showSimulationRect.xMax, showSimulationRect.yMin),
+                new Vector2(mainPanelRect.size.x - (showSimulationRect.xMax + characterWidth), textFieldHeight));
             resetButtonRect = new(
-                new Vector2(simulateButtonRect.xMin, simulateButtonRect.yMax + verticalOffset),
+                new Vector2(buttonGroupRect.xMin, simulateButtonRect.yMax + verticalOffset),
                 new Vector2(mainPanelRect.size.x - characterWidth, textFieldHeight));
 
+            GUI.enabled = !simulate;
+            isShowSimulationChecked = GUI.Toggle(showSimulationRect, isShowSimulationChecked, showSimText);
             isSimulatedPressed = GUI.Button(simulateButtonRect, simulateText, EditorStyles.miniButton);
             isResetPressed = GUI.Button(resetButtonRect, resetText, EditorStyles.miniButton);
+            GUI.enabled = simulate;
         }
 
         private void HandleStatusText()
@@ -354,6 +373,7 @@ namespace RigidPlacement
             scrollViewRect = new(
                 new Vector2(statusLabelRect.xMin, statusLabelFieldRect.yMax + (textFieldHeight * 0.5f)),
                 new Vector2(mainPanelRect.width - characterWidth, adjustableHeight));
+            GUI.enabled = !simulate;
             GUILayout.BeginArea(scrollViewRect);
             overviewScrollPosition = GUILayout.BeginScrollView(overviewScrollPosition, GUILayout.Width(scrollViewRect.width));
             foreach (SimulatedBody body in bodies)
@@ -369,6 +389,7 @@ namespace RigidPlacement
             }
             GUILayout.EndScrollView();
             GUILayout.EndArea();
+            GUI.enabled = simulate;
         }
 
         private void HandleAdd()
@@ -401,12 +422,15 @@ namespace RigidPlacement
             else if (list.Count > 0)
             {
                 int removedBodies = 0;
-                for (int i = bodies.Count - 1; i > -1; i--)
+                if (bodies.Count > 0)
                 {
-                    if (list.Contains(bodies[i].Rigidbody.gameObject))
+                    for (int i = bodies.Count - 1; i > -1; i--)
                     {
-                        bodies.RemoveAt(i);
-                        removedBodies++;
+                        if (list.Contains(bodies[i].Rigidbody.gameObject))
+                        {
+                            bodies.RemoveAt(i);
+                            removedBodies++;
+                        }
                     }
                 }
                 if (includeNonRigidbodies)
@@ -446,9 +470,9 @@ namespace RigidPlacement
             {
                 statusString = "Max Iterations must be higher than 0";
             }
-            else if (int.TryParse(maxIterationsString, out int iterations))
+            else if (int.TryParse(maxIterationsString, out maxIterations))
             {
-                List<Rigidbody> simulatedBodies = new();
+                simulatedBodies.Clear();
                 if (bodies.Count > 0)
                 {
                     // Update position and rotation to make sure that the new
@@ -488,69 +512,7 @@ namespace RigidPlacement
 
                 if (simulatedBodies.Count > 0 || virtualBodies.Count > 0)
                 {
-                    // Find all bodies not to be simulated and note their position and rotation
-                    // so they can be reset after the simulation is done.
-                    List<SimulatedBody> unaffectedBodies = new();
-                    GameObject[] allObjects = FindObjectsOfType<GameObject>();
-                    simulatedBodies.AddRange(virtualBodies);
-                    foreach (GameObject go in allObjects)
-                    {
-                        if (go.TryGetComponent(out Rigidbody body))
-                        {
-                            if (!simulatedBodies.Contains(body))
-                            {
-                                unaffectedBodies.Add(new(body, body.position, body.rotation));
-                            }
-                        }
-                    }
-
-                    // Randomly Generate Forces
-                    float minForce = string.IsNullOrEmpty(forceMinString) ? 0f : float.Parse(forceMinString);
-                    float maxForce = string.IsNullOrEmpty(forceMaxString) ? 0f : float.Parse(forceMaxString);
-                    float forceRad;
-                    if (randomizeAngle)
-                    {
-                        forceRad = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
-                    }
-                    else
-                    {
-                        forceRad = string.IsNullOrEmpty(angleString) ? 0f : Mathf.Clamp(float.Parse(angleString), 0f, 360f) * Mathf.Deg2Rad;
-                    }
-
-                    // Apply forces
-                    foreach (Rigidbody body in simulatedBodies)
-                    {
-                        float randomForce = UnityEngine.Random.Range(minForce, maxForce);
-                        Vector3 forceDir = new(Mathf.Sin(forceRad), 0, Mathf.Cos(forceRad));
-                        body.AddForce(forceDir * randomForce, ForceMode.Impulse);
-                    }
-
-                    // Store previous mode to reset it after simulation
-                    SimulationMode simMode = Physics.simulationMode;
-                    // Script mode necessary for Editor script to run Physics.Simulate();
-                    Physics.simulationMode = SimulationMode.Script;
-                    Physics.autoSyncTransforms = false;
-                    for (int i = 0; i < iterations; i++)
-                    {
-                        Physics.Simulate(Time.fixedDeltaTime);
-                        ResetAllBodies(unaffectedBodies);
-                        if (simulatedBodies.All(rb => rb.IsSleeping()))
-                        {
-                            statusString = $"Done simulating in {i} iterations.";
-                            break;
-                        }
-                    }
-                    Physics.autoSyncTransforms = true;
-                    Physics.simulationMode = simMode;
-                    ResetAllBodies(unaffectedBodies);
-
-                    simulatedBodies.Clear();
-
-                    for (int i = 0; i < nonRigidbodies.Count; i++)
-                    {
-                        DestroyImmediate(nonRigidbodies[i].Target.GetComponent<MeshCollider>());
-                        DestroyImmediate(nonRigidbodies[i].Target.GetComponent<Rigidbody>());
-                    }
+                    StartSimulation();
                 }
                 else
                 {
@@ -561,6 +523,111 @@ namespace RigidPlacement
             {
                 statusString = "Max Iterations Format Error.";
             }
+        }
+
+        private void StartSimulation()
+        {
+            // Find all bodies not to be simulated and note their position and rotation
+            // so they can be reset after the simulation is done.
+            statusString = "Simulating...";
+            unaffectedBodies.Clear();
+            GameObject[] allObjects = FindObjectsOfType<GameObject>();
+            simulatedBodies.AddRange(virtualBodies);
+            foreach (GameObject go in allObjects)
+            {
+                if (go.TryGetComponent(out Rigidbody body))
+                {
+                    if (!simulatedBodies.Contains(body))
+                    {
+                        unaffectedBodies.Add(new(body, body.position, body.rotation));
+                    }
+                }
+            }
+
+            // Randomly Generate Forces
+            float minForce = string.IsNullOrEmpty(forceMinString) ? 0f : float.Parse(forceMinString);
+            float maxForce = string.IsNullOrEmpty(forceMaxString) ? 0f : float.Parse(forceMaxString);
+            float forceRad;
+            if (randomizeAngle)
+            {
+                forceRad = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            }
+            else
+            {
+                forceRad = string.IsNullOrEmpty(angleString) ? 0f : Mathf.Clamp(float.Parse(angleString), 0f, 360f) * Mathf.Deg2Rad;
+            }
+
+            // Apply forces
+            foreach (Rigidbody body in simulatedBodies)
+            {
+                float randomForce = UnityEngine.Random.Range(minForce, maxForce);
+                Vector3 forceDir = new(Mathf.Sin(forceRad), 0, Mathf.Cos(forceRad));
+                body.AddForce(forceDir * randomForce, ForceMode.Impulse);
+            }
+            // Store previous mode to reset it after simulation
+            simMode = Physics.simulationMode;
+            // Script mode necessary for Editor script to run Physics.Simulate();
+            Physics.simulationMode = SimulationMode.Script;
+            Physics.autoSyncTransforms = false;
+            if (isShowSimulationChecked)
+            {
+                simulate = true;
+                simStep = 0;
+            }
+            else
+            {
+                for (int i = 0; i < maxIterations; i++)
+                {
+                    Physics.Simulate(Time.fixedDeltaTime);
+                    ResetAllBodies(unaffectedBodies);
+                    if (simulatedBodies.All(rb => rb.IsSleeping()))
+                    {
+                        statusString = $"Done simulating in {i + 1} iterations.";
+                        break;
+                    }
+                }
+                PostSimulate();
+            }
+        }
+
+        private void Update()
+        {
+            if (simulate)
+            {
+                SceneView.RepaintAll();
+                if (simStep >= maxIterations)
+                {
+                    statusString = $"Done simulating in {maxIterations} iterations.";
+                    PostSimulate();
+                }
+                else
+                {
+                    Physics.Simulate(Time.fixedDeltaTime);
+                    ResetAllBodies(unaffectedBodies);
+                    if (simulatedBodies.All(rb => rb.IsSleeping()))
+                    {
+                        statusString = $"Done simulating in {simStep + 1} iterations.";
+                        PostSimulate();
+                    }
+                }
+                simStep++;
+            }
+        }
+
+        private void PostSimulate()
+        {
+            Physics.autoSyncTransforms = true;
+            Physics.simulationMode = simMode;
+            ResetAllBodies(unaffectedBodies);
+
+            simulatedBodies.Clear();
+            for (int i = 0; i < nonRigidbodies.Count; i++)
+            {
+                DestroyImmediate(nonRigidbodies[i].Target.GetComponent<MeshCollider>());
+                DestroyImmediate(nonRigidbodies[i].Target.GetComponent<Rigidbody>());
+            }
+            simulate = false;
+            Repaint();
         }
 
         private List<GameObject> GetSelection()
